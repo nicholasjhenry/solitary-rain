@@ -59,7 +59,9 @@ defmodule Hello.Orders do
 
   """
   def get_order!(%Scope{} = scope, id) do
-    Repo.get_by!(Order, id: id, user_id: scope.user.id)
+    Order
+    |> Repo.get_by!(id: id, user_id: scope.user.id)
+    |> Repo.preload(line_items: [:product])
   end
 
   @doc """
@@ -143,5 +145,135 @@ defmodule Hello.Orders do
     true = order.user_id == scope.user.id
 
     Order.changeset(order, attrs, scope)
+  end
+
+  alias Hello.Orders.LineItem
+
+  @doc """
+  Returns the list of order_line_items.
+
+  ## Examples
+
+      iex> list_order_line_items()
+      [%LineItem{}, ...]
+
+  """
+  def list_order_line_items do
+    Repo.all(LineItem)
+  end
+
+  @doc """
+  Gets a single line_item.
+
+  Raises `Ecto.NoResultsError` if the Line item does not exist.
+
+  ## Examples
+
+      iex> get_line_item!(123)
+      %LineItem{}
+
+      iex> get_line_item!(456)
+      ** (Ecto.NoResultsError)
+
+  """
+  def get_line_item!(id), do: Repo.get!(LineItem, id)
+
+  @doc """
+  Creates a line_item.
+
+  ## Examples
+
+      iex> create_line_item(%{field: value})
+      {:ok, %LineItem{}}
+
+      iex> create_line_item(%{field: bad_value})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def create_line_item(attrs) do
+    %LineItem{}
+    |> LineItem.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Updates a line_item.
+
+  ## Examples
+
+      iex> update_line_item(line_item, %{field: new_value})
+      {:ok, %LineItem{}}
+
+      iex> update_line_item(line_item, %{field: bad_value})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def update_line_item(%LineItem{} = line_item, attrs) do
+    line_item
+    |> LineItem.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Deletes a line_item.
+
+  ## Examples
+
+      iex> delete_line_item(line_item)
+      {:ok, %LineItem{}}
+
+      iex> delete_line_item(line_item)
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def delete_line_item(%LineItem{} = line_item) do
+    Repo.delete(line_item)
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking line_item changes.
+
+  ## Examples
+
+      iex> change_line_item(line_item)
+      %Ecto.Changeset{data: %LineItem{}}
+
+  """
+  def change_line_item(%LineItem{} = line_item, attrs \\ %{}) do
+    LineItem.changeset(line_item, attrs)
+  end
+
+  alias Hello.Orders.LineItem
+  alias Hello.ShoppingCart
+
+  def complete_order(%Scope{} = scope, %ShoppingCart.Cart{} = cart) do
+    true = cart.user_id == scope.user.id
+
+    line_items =
+      Enum.map(cart.items, fn item ->
+        %{product_id: item.product_id, price: item.product.price, quantity: item.quantity}
+      end)
+
+    order =
+      Ecto.Changeset.change(%Order{},
+        user_id: scope.user.id,
+        total_price: ShoppingCart.total_cart_price(cart),
+        line_items: line_items
+      )
+
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:order, order)
+    |> Ecto.Multi.run(:prune_cart, fn _repo, _changes ->
+      ShoppingCart.prune_cart_items(scope, cart)
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{order: order}} ->
+        broadcast(scope, {:created, order})
+        {:ok, order}
+
+      {:error, name, value, _changes_so_far} ->
+        {:error, {name, value}}
+    end
   end
 end

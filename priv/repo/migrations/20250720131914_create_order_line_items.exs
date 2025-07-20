@@ -3,7 +3,7 @@ defmodule Hello.Repo.Migrations.CreateOrderLineItems do
 
   def change do
     create table(:order_line_items) do
-      add :price, :decimal
+      add :price, :decimal, precision: 15, scale: 6, null: false
       add :quantity, :integer
       add :order_id, references(:orders, on_delete: :nothing)
       add :product_id, references(:products, on_delete: :nothing)

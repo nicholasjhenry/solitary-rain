@@ -4,7 +4,10 @@ defmodule Hello.Orders.Order do
 
   schema "orders" do
     field :total_price, :decimal
-    field :user_id, :id
+
+    belongs_to :user, Hello.Accounts.User
+    has_many :line_items, Hello.Orders.LineItem
+    has_many :products, through: [:line_items, :product]
 
     timestamps(type: :utc_datetime)
   end
